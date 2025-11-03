@@ -25,7 +25,13 @@ combined_mat = np.concatenate((cnn_mat, bovw_mat), axis=1).astype('float32')
 
 # ---------------- Tạo Faiss index ----------------
 vector_dim = combined_mat.shape[1]
-faiss.normalize_L2(combined_mat)  # chuẩn hóa cho cosine similarity
+
+ # chuẩn hóa cho cosine similarity
+for i in range(combined_mat.shape[0]):
+    norm = np.sqrt(np.sum(combined_mat[i]**2))  # tinh L2 norm
+    if norm > 1e-6:
+        combined_mat[i] /= norm                 # chuan hoa vector
+
 index = faiss.IndexFlatIP(vector_dim)
 index.add(combined_mat)
 print(f"Da them {index.ntotal} vector vao Faiss Index")

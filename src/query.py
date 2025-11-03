@@ -7,6 +7,8 @@ import cv2
 import torch
 from torchvision import transforms
 from torchvision.models import resnet18, ResNet18_Weights
+from cnn_features import manual_transform
+from sift_bovw import detectAndCompute
 
 # ---------------- CONFIG ----------------
 INDEX_FILE = Path("D:/DaPhuongTien/index.faiss")
@@ -28,46 +30,49 @@ cnn_model = resnet18(weights=ResNet18_Weights.DEFAULT)
 cnn_model.fc = torch.nn.Identity()
 cnn_model = cnn_model.to(DEVICE).eval()
 
-transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485,0.456,0.406],
-                         std=[0.229,0.224,0.225])
-])
-
-sift = cv2.SIFT_create()
 
 # ---------------- Hàm tính vector kết hợp ----------------
 def get_combined_vector(img_path):
-    # --- CNN vector ---
+    # ---------------- CNN vector ----------------
     img = Image.open(img_path).convert('RGB')
-    x = transform(img).unsqueeze(0).to(DEVICE)
+    x = manual_transform(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         cnn_vec = cnn_model(x).cpu().numpy().flatten()
-    cnn_vec /= np.linalg.norm(cnn_vec)+1e-6
+    
+    # Tự tính L2 norm cho CNN vector
+    norm_cnn = np.sqrt(np.sum(cnn_vec**2))
+    if norm_cnn > 1e-6:
+        cnn_vec = cnn_vec / norm_cnn
 
-    # --- BoVW vector ---
+    # ---------------- BoVW vector ----------------
     img_gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
-    if img_gray is None:
-        bovw_vec = np.zeros(K, dtype=np.float32)
-    else:
-        kp, des = sift.detectAndCompute(img_gray, None)
-        if des is None:
-            bovw_vec = np.zeros(K, dtype=np.float32)
-        else:
+    bovw_vec = np.zeros(K, dtype=np.float32)
+
+    if img_gray is not None:
+        kp, des = detectAndCompute(img_gray)
+        if des is not None and len(des) > 0:
+             # Gán từ descriptor sang cluster bằng kmeans
             words = kmeans.predict(des.astype(np.float32))
-            hist, _ = np.histogram(words, bins=np.arange(K+1))
-            hist = hist.astype(float)
-            norm = np.linalg.norm(hist)
-            if norm > 1e-6:
-                hist /= norm
+            # Tính histogram
+            hist = np.zeros(K, dtype=np.float32)
+            for w in words:
+                hist[int(w)] += 1.0
+            # Tự chuẩn hóa L2 histogram
+            norm_hist = np.sqrt(np.sum(hist**2))
+            if norm_hist > 1e-6:
+                hist /= norm_hist
             bovw_vec = hist.astype(np.float32)
 
-    # --- Combine ---
-    combined = np.concatenate([cnn_vec, bovw_vec], axis=0)
-    combined /= np.linalg.norm(combined)+1e-6
-    return combined.reshape(1,-1).astype('float32')
+    # ---------------- Combine vector ----------------
+    combined = np.concatenate([cnn_vec, bovw_vec], axis=0)  # vẫn dùng concat thư viện
+
+    # chuẩn hóa vector kết hợp
+    norm_combined = np.sqrt(np.sum(combined**2))
+    if norm_combined > 1e-6:
+        combined /= norm_combined
+
+    return combined.reshape(1, -1).astype('float32')
+
 
 # ---------------- Hàm tìm top-k ảnh tương tự ----------------
 def query_image(img_path, top_k=TOP_K):
@@ -76,10 +81,3 @@ def query_image(img_path, top_k=TOP_K):
     results = [(paths[idx], float(D[0][i])) for i, idx in enumerate(I[0])]
     return results
 
-# ---------------- Ví dụ test ----------------
-if __name__ == "__main__":
-    query_img = "D:/DaPhuongTien/data/split/test/tao/001.jpg"
-    top_results = query_image(query_img, TOP_K)
-    print(f"Top {TOP_K} anh tuong tự:")
-    for path, score in top_results:
-        print(f"{path} (score={score:.4f})")
