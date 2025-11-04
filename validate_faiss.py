@@ -1,8 +1,9 @@
 from pathlib import Path
 from tqdm import tqdm
 import os
+import sys
+sys.path.append(str(Path(__file__).parent / "src"))
 from query import query_image
-
 # ---------------- CONFIG ----------------
 VAL_DIR = "D:/DaPhuongTien/data/split/val"
 DATASET_DIR = "D:/DaPhuongTien/dataset_cleaned"

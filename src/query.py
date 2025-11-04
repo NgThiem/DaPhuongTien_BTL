@@ -5,7 +5,6 @@ from pathlib import Path
 from PIL import Image
 import cv2
 import torch
-from torchvision import transforms
 from torchvision.models import resnet18, ResNet18_Weights
 from cnn_features import manual_transform
 from sift_bovw import detectAndCompute
@@ -35,7 +34,7 @@ cnn_model = cnn_model.to(DEVICE).eval()
 def get_combined_vector(img_path):
     # ---------------- CNN vector ----------------
     img = Image.open(img_path).convert('RGB')
-    x = manual_transform(img).unsqueeze(0).to(DEVICE)
+    x = manual_transform(img).unsqueeze(0).to(DEVICE).float()
     with torch.no_grad():
         cnn_vec = cnn_model(x).cpu().numpy().flatten()
     
